@@ -487,6 +487,7 @@ class FedDreamFastServer(BaseServer):
             if os.environ.get("ACCORD_NANDEBUG") == "1":  # accord: read-only NaN tracing
                 for k, g in enumerate(grads):
                     print(f"NANDBG ep {self.ep} batch-step {it} client{k} z nonfinite={(~torch.isfinite(g)).sum().item()} absmax={g.abs().max().item():.3g}", flush=True)
+            grads = torch.stack(grads).to(self.device)
             grads = grads.mean(dim=0) 
             # if self.adaptive_distill and self.round > self.adaptive_distill_start_round:
             #     # pass reps on the local model and get the gradients
