@@ -37,7 +37,8 @@ cfg.update({
                "patience": int(os.environ.get("ACCORD_PATIENCE", 20)),
                "max_epochs": int(os.environ.get("ACCORD_MAX", 800)),
                "log": os.environ.get("ACCORD_LOG", "1") == "1",
-               "dream_every": int(os.environ.get("ACCORD_DREAM_EVERY", 10)), "dream_slots": 8},
+               "dream_every": int(os.environ.get("ACCORD_DREAM_EVERY", 10)), "dream_slots": 8,
+               "nan_guard": os.environ.get("ACCORD_NAN_GUARD", "0") == "1"},
 })
 if SPLIT == "dir01":
     cfg["alpha"] = 0.1

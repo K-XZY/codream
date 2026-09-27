@@ -31,6 +31,13 @@ Branch `accord-repro`. One line per change: file, function, why.
 - `main.py`: `ACCORD_DETERMINISTIC=1` switches on cuDNN-deterministic / deterministic algorithms
   (off by default; used only by the read-only check, because CoDream-fast is not bitwise
   reproducible run to run otherwise).
+- `algos/feddream_fast.py` `FedDreamFastServer._accord_nan_guard` (new, opt-in via
+  `accord.nan_guard` / `ACCORD_NAN_GUARD=1`): rollback of the meta-generator, its optimizer and
+  the generator to the last finite batch when the dreams or generator become non-finite; resets
+  counted as `guard_resets` in `metrics.jsonl`. **A deviation from the authors' method**, used
+  only for the non-IID CoDream-fast reruns (Kevin, 2026-09-28): without it every non-IID run's
+  generator went non-finite between epochs 19 and 120 (BatchNorm running variance of the
+  generator's conv blocks grows without bound, 2.5 -> 2,900 in 8 epochs).
 - `configs/accord/grid.py` (new): the 9 cells over the upstream CIFAR10 IID configs.
 - `tests/check_runs.py`, `tests/check_artifacts.py` (new): validators.
 

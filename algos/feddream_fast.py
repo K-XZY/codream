@@ -525,6 +525,8 @@ class FedDreamFastServer(BaseServer):
             reptile_grad(self.meta_generator, self.generator, self.device)
             self.meta_optimizer.step()
         self.reps = self.generator(self.reps)
+        if accord.enabled(self.config) and accord.acfg(self.config).get("nan_guard", False):
+            self._accord_nan_guard()
         if getattr(self, "_accord_capture", False):
             self._cap = {"image": self.reps[:accord.acfg(self.config)["dream_slots"]].detach().clone()}
         self.add_dreams()
@@ -561,6 +563,35 @@ class FedDreamFastServer(BaseServer):
                 self.update_stats(stats)
             if self.log_console:
                 self.log_utils.log_console("Round {} done".format(round))
+
+    def _accord_nan_guard(self):
+        """accord NaN guard (opt-in, config accord.nan_guard). After a dream batch is generated,
+        check the meta-generator, the generator and the dream images for non-finite values. If any
+        are non-finite, restore the meta-generator and its optimizer from the last batch where all
+        were finite, copy it into the generator, and regenerate the batch from fresh latents.
+        Otherwise record the current state as the last good one. Draws random numbers only when it
+        fires, so a run in which it never fires trains exactly as without it."""
+        import copy
+        def finite_module(m):
+            return all(torch.isfinite(t).all() for t in m.state_dict().values() if t.is_floating_point())
+        inject = os.environ.get("ACCORD_GUARD_TEST_BATCH")  # test hook: corrupt the dreams at this batch
+        if inject is not None and self.ep == int(inject):
+            self.reps = self.reps * float("nan")
+        if torch.isfinite(self.reps).all() and finite_module(self.generator) and finite_module(self.meta_generator):
+            self._good = (copy.deepcopy(self.meta_generator.state_dict()),
+                          copy.deepcopy(self.meta_optimizer.state_dict()))
+            return
+        self._accord_guard_resets = getattr(self, "_accord_guard_resets", 0) + 1
+        if not hasattr(self, "_good"):
+            raise RuntimeError("accord NaN guard: non-finite dreams before any finite batch")
+        self.meta_generator.load_state_dict(self._good[0])
+        self.meta_optimizer.load_state_dict(self._good[1])
+        self.generator.load_state_dict(self._good[0])
+        z = torch.randn(size=(self.distill_batch_size, self.nz), device=self.device)
+        self.reps = self.generator(z)
+        if not torch.isfinite(self.reps).all():
+            raise RuntimeError("accord NaN guard: restored generator still produces non-finite dreams")
+        print(f"accord NaN guard: reset at batch {self.ep} (total {self._accord_guard_resets})", flush=True)
 
     def accord_run_protocol(self):
         """Upstream loop plus: eval/test top-1/top-3 of the server model and of every client each
@@ -602,7 +633,8 @@ class FedDreamFastServer(BaseServer):
                     accord.save_ckpt(self.model, f"{rdir}/ckpt/server_best.pt")
                 accord.append_jsonl(f"{rdir}/metrics.jsonl",
                                     {"epoch": epoch, "server": sc, "clients_mean": cmean, "clients": cl,
-                                     "soft_label_entropy": sum(self._accord_entropy) / len(self._accord_entropy)})
+                                     "soft_label_entropy": sum(self._accord_entropy) / len(self._accord_entropy),
+                                     "guard_resets": getattr(self, "_accord_guard_resets", 0)})
             save_dream = log and (epoch % a["dream_every"] == 0 or best_s or best_c)
             if save_dream:
                 accord.save_dream(self.config, epoch, "agg", self._cap)
