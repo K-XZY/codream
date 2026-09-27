@@ -4,6 +4,7 @@ from torch import Tensor
 import torch.nn as nn
 
 from algos.base_class import BaseClient, BaseServer
+from utils import accord
 
 
 def put_on_cpu(wts):
@@ -64,10 +65,17 @@ class FedAvgClient(BaseClient):
     def run_protocol(self):
         start_epochs = self.config.get("start_epochs", 0)
         total_epochs = self.config["epochs"]
+        if accord.enabled(self.config):
+            # the server decides when to stop; "STOP" arrives in place of a START
+            total_epochs = accord.acfg(self.config)["max_epochs"] + 1
         for round in range(start_epochs, total_epochs):
             # self.log_utils.logging.info("Client waiting for semaphore from {}".format(self.server_node))
             # print("Client waiting for semaphore from {}".format(self.server_node))
-            self.comm_utils.wait_for_signal(src=self.server_node, tag=self.tag.START)
+            msg = self.comm_utils.wait_for_signal(src=self.server_node, tag=self.tag.START)
+            if isinstance(msg, str) and msg == "STOP":
+                break
+            if round == start_epochs:
+                self.accord_record()
             # self.log_utils.logging.info("Client received semaphore from {}".format(self.server_node))
             for i in range(self.config["local_runs"]):
                 self.local_train()
@@ -173,6 +181,8 @@ class FedAvgServer(BaseServer):
         self.update_stats(local_test_acc, self.round)
 
     def run_protocol(self):
+        if accord.enabled(self.config):
+            return self.accord_run_protocol()
         self.log_utils.log_console("Starting iid clients federated averaging")
         start_epochs = self.config.get("start_epochs", 0)
         total_epochs = self.config["epochs"]
@@ -189,3 +199,35 @@ class FedAvgServer(BaseServer):
                 round, self.best_acc
             ))
             self.log_utils.log_console("Round {} done".format(round))
+
+    def accord_run_protocol(self):
+        """Upstream loop plus: eval/test top-1/top-3 of the averaged model each round, best/last
+        checkpoints, metrics.jsonl, and the stopping rule (utils/accord.py)."""
+        a = accord.acfg(self.config)
+        log = a.get("log", True)
+        rule = accord.StopRule(a)
+        rdir = accord.run_dir(self.config)
+        if log:
+            accord.record_run(self.config, self.dset_obj, {"arm": "FedAvg"})
+        round, epoch = 0, 0
+        while True:
+            self.round = round
+            self.single_round()
+            acc = self.test()
+            self.log_utils.log_tb(f"test_acc", acc, round)
+            self.log_utils.log_console("round: {} test_acc:{:.4f}".format(round, acc))
+            epoch = round + 1
+            if log:
+                sc = self.scorer(self.model, self.device)
+                if rule.update("server", epoch, sc["eval_top1"]):
+                    accord.save_ckpt(self.model, f"{rdir}/ckpt/server_best.pt")
+                accord.append_jsonl(f"{rdir}/metrics.jsonl", {"epoch": epoch, "server": sc})
+            if rule.should_stop(epoch):
+                break
+            round += 1
+        for client_node in self.clients:
+            self.comm_utils.send_signal(dest=client_node, data="STOP", tag=self.tag.START)
+        if log:
+            accord.save_ckpt(self.model, f"{rdir}/ckpt/server_last.pt")
+            accord.write_json(f"{rdir}/done.json", {"epochs": epoch, "stopped_by": rule.stopped_by(epoch),
+                                                    "best": rule.best, "best_epoch": rule.best_epoch})

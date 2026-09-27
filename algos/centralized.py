@@ -2,6 +2,7 @@ import numpy as np
 from torch.utils.data import DataLoader, Subset
 from utils.data_utils import get_dataset, non_iid_labels, non_iid_balanced_clients, non_iid_balanced_labels, non_iid_unbalanced_dataidx_map, plot_training_distribution
 from algos.base_class import BaseServer
+from utils import accord
 
 
 class CentralizedServer(BaseServer):
@@ -28,7 +29,14 @@ class CentralizedServer(BaseServer):
             indices, train_y = split_data
             indices = [item for sublist in indices for item in sublist]
             dset = Subset(train_dset, indices)  
+            self._accord_local_idx = list(indices)
             print("using non_iid_balanced", config["alpha"])  
+        elif config["exp_type"].startswith("non_iid_disjoint"):
+            per_client = accord.disjoint_indices(self.dset_obj, None, samples_per_client)
+            indices = [i for idx in per_client for i in idx]
+            dset = Subset(train_dset, indices)
+            self._accord_local_idx = indices
+            print("using non_iid_disjoint, union of", accord.DISJOINT_CLASSES)
         elif config["exp_type"].startswith("non_iid_balanced_labels"):
             print("starting creating data")
             split_data = non_iid_balanced_labels(self.dset_obj, config["client_data_units"], config["samples_per_label"], config["alpha"])
@@ -45,6 +53,7 @@ class CentralizedServer(BaseServer):
         else:
             indices = np.random.permutation(len(train_dset))
             dset = Subset(train_dset, indices[client_idx*samples_per_client:(client_idx+1)*samples_per_client])     
+            self._accord_local_idx = indices[client_idx*samples_per_client:(client_idx+1)*samples_per_client].tolist()
             
         self.dloader = DataLoader(dset, batch_size=batch_size, shuffle=True)
         self._test_loader = DataLoader(test_dset, batch_size=batch_size)
@@ -78,6 +87,8 @@ class CentralizedServer(BaseServer):
         return loss
 
     def run_protocol(self):
+        if accord.enabled(self.config):
+            return self.accord_run_protocol()
         self.log_utils.log_console("Starting isolated client training")
         start_epochs = self.config.get("start_epochs", 0)
         total_epochs = self.config["epochs"]
@@ -98,3 +109,40 @@ class CentralizedServer(BaseServer):
             ))
             self.log_utils.log_console("Round {} done".format(round))
         self.log_utils.log_console("Isolated client training over")
+
+    def accord_run_protocol(self):
+        """Upstream loop plus eval/test top-1/top-3 each epoch, checkpoints, metrics.jsonl and the
+        stopping rule (utils/accord.py)."""
+        a = accord.acfg(self.config)
+        log = a.get("log", True)
+        rule = accord.StopRule(a)
+        rdir = accord.run_dir(self.config)
+        if log:
+            accord.record_run(self.config, self.dset_obj, {"arm": "CENT"})
+            counts = [0] * self.dset_obj.NUM_CLS
+            for i in self._accord_local_idx:
+                counts[self.dset_obj.train_dset.targets[i]] += 1
+            accord.write_json(f"{rdir}/clients/cent.json",
+                              {"orig_idx": self.dset_obj.train_orig_idx[self._accord_local_idx].tolist(),
+                               "class_counts": counts})
+        round, epoch = 0, 0
+        while True:
+            self.round = round
+            loss, tr_acc = self.train()
+            self.log_utils.log_tb(f"train_loss", loss, round)
+            test_acc = self.test()
+            self.log_utils.log_tb(f"test_acc", test_acc, round)
+            self.log_utils.log_console("round: {} train_loss:{:.4f} test_acc:{:.4f}".format(round, loss, test_acc))
+            epoch = round + 1
+            if log:
+                sc = self.scorer(self.model, self.device)
+                if rule.update("server", epoch, sc["eval_top1"]):
+                    accord.save_ckpt(self.model, f"{rdir}/ckpt/server_best.pt")
+                accord.append_jsonl(f"{rdir}/metrics.jsonl", {"epoch": epoch, "server": sc})
+            if rule.should_stop(epoch):
+                break
+            round += 1
+        if log:
+            accord.save_ckpt(self.model, f"{rdir}/ckpt/server_last.pt")
+            accord.write_json(f"{rdir}/done.json", {"epochs": epoch, "stopped_by": rule.stopped_by(epoch),
+                                                    "best": rule.best, "best_epoch": rule.best_epoch})

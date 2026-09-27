@@ -8,6 +8,7 @@ from torch.utils.data import DataLoader, Subset
 
 from utils.log_utils import LogUtils
 from utils.model_utils import ModelUtils
+from utils import accord
 
 class BaseNode(ABC):
     def __init__(self, config) -> None:
@@ -20,6 +21,9 @@ class BaseNode(ABC):
         self.setup_cuda(config)
         self.model_utils = ModelUtils()
         self.dset_obj = get_dataset(config["dset"], config["dpath"])
+        if accord.enabled(config):
+            accord.carve_eval(self.dset_obj, config)
+            self.scorer = accord.Scorer(self.dset_obj)
             
         self.set_constants()
 
@@ -97,7 +101,13 @@ class BaseClient(BaseNode):
             # plot_training_distribution(split_data[0], split_data[1], config["num_clients"], self.dset_obj.NUM_CLS, config["saved_models"])
             indices, train_y = split_data
             dset = Subset(train_dset, indices[client_idx]) 
+            self._accord_local_idx = list(indices[client_idx])
             print("using non_iid_balanced", config["alpha"])   
+        elif config["exp_type"].startswith("non_iid_disjoint"):
+            local_idx = accord.disjoint_indices(self.dset_obj, client_idx, samples_per_client)
+            dset = Subset(train_dset, local_idx)
+            self._accord_local_idx = local_idx
+            print("using non_iid_disjoint", accord.DISJOINT_CLASSES[client_idx])
         elif config["exp_type"].startswith("non_iid_balanced_labels"):
             #all nodes will eventually generate the same data
             print("starting creating data")
@@ -114,6 +124,7 @@ class BaseClient(BaseNode):
         else:
             indices = np.random.permutation(len(train_dset))
             dset = Subset(train_dset, indices[client_idx*samples_per_client:(client_idx+1)*samples_per_client])
+            self._accord_local_idx = indices[client_idx*samples_per_client:(client_idx+1)*samples_per_client].tolist()
         self.class_counts = [0]*self.dset_obj.NUM_CLS
         for (x, y) in dset:
             if not isinstance(y, int):
@@ -131,6 +142,12 @@ class BaseClient(BaseNode):
         else:
             self.dloader = DataLoader(dset, batch_size=batch_size, shuffle=True)
         self._test_loader = DataLoader(test_dset, batch_size=batch_size)
+
+    def accord_record(self):
+        """Write this client's data indices; call after the server has created the run folder."""
+        if accord.enabled(self.config) and accord.acfg(self.config).get("log", True):
+            accord.record_client(self.config, self.dset_obj, self.node_id - 1,
+                                 self._accord_local_idx, self.class_counts)
 
     def local_train(self, dataset, **kwargs):
         """

@@ -12,6 +12,7 @@ from utils.di_hook import DeepInversionHook
 from utils.modules import KLDiv, kldiv, reptile_grad, fomaml_grad, reset_l0, reset_bn, put_on_cpu
 from torch.utils.data import DataLoader
 from utils.data_utils import CustomDataset
+from utils import accord
 from PIL import Image
 
 
@@ -33,6 +34,7 @@ class CommProtocol(object):
     GENERATOR_UPDATES = 4 # Used by client to send the updated genertor model state
     GENERATOR_DONE = 3 # Used to signal that generator training is complete
     STUDENT_UPDATES = 2 
+    ACCORD = 21 # accord: server tells each client whether to save its checkpoint / dream log
 
 class FedDreamFastClient(BaseClient):
     def __init__(self, config):
@@ -130,6 +132,8 @@ class FedDreamFastClient(BaseClient):
             self.current_stats = [student_loss, student_acc,
                                 tr_loss, tr_acc,
                                 test_loss, test_acc]
+            if accord.enabled(self.config) and accord.acfg(self.config).get("log", True):
+                self.current_stats.append(self.scorer(self.model, self.device))
         return
 
     def add_dreams(self):
@@ -139,6 +143,8 @@ class FedDreamFastClient(BaseClient):
         reps = reps.to(self.device)
         # send the output of the last layer to the server
         out = self.model(reps).detach().to("cpu")
+        if getattr(self, "_accord_capture", False):
+            self._cap["logits_on_aggregate"] = out[:accord.acfg(self.config)["dream_slots"]].clone()
         # loss_bn = sum([model.r_feature for (idx, model) in enumerate(self.hooks) if hasattr(model, "r_feature")]).to("cpu")
         self.comm_utils.send_signal(dest=self.server_node,
                                     data=out,
@@ -155,10 +161,10 @@ class FedDreamFastClient(BaseClient):
     def fast_synthesize(self, reps):
         self.model.eval()
         self.z.data = reps.clone().detach().requires_grad_(True)
-        for _ in range(self.local_steps):
+        for _step in range(self.local_steps):
             self.model.zero_grad()
-            inputs = self.generator(self.z)
-            inputs = self.aug(inputs) # crop and normalize
+            gen_out = self.generator(self.z)
+            inputs = self.aug(gen_out) # crop and normalize
             t_out = self.model(inputs)
             # loss_oh = F.cross_entropy( t_out, targets )
             probs = torch.softmax(t_out, dim=1)
@@ -170,6 +176,10 @@ class FedDreamFastClient(BaseClient):
                 mask = (s_out.max(1)[1]==t_out.max(1)[1]).float()
                 loss_adv = -(kldiv(s_out, t_out, reduction='none').sum(1) * mask).mean() # decision adversarial distillation
             loss = self.oh * entropy + self.bn * loss_bn + self.adv * loss_adv
+            if getattr(self, "_accord_capture", False) and _step == self.local_steps - 1:
+                S = accord.acfg(self.config)["dream_slots"]
+                self._cap = {"proposal": gen_out[:S].detach().clone(),
+                             "proposal_probs": probs[:S].detach().clone()}
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
@@ -233,14 +243,26 @@ class FedDreamFastClient(BaseClient):
         s_model = self.config["models"]["0"] if "models" in self.config  else self.config["model"]
         self.s_model = self.model_utils.get_model(s_model, self.config["dset"], 
                                    self.device, self.device_ids, num_classes=self.dset_obj.NUM_CLS)
-        for round in range(start_epochs, self.epochs):
+        total_epochs = self.epochs
+        if accord.enabled(self.config):
+            # the server decides when to stop; "STOP" arrives in place of the student model
+            total_epochs = accord.acfg(self.config)["max_epochs"] + 1
+            self.accord_record()
+        for round in range(start_epochs, total_epochs):
             s_state = self.comm_utils.wait_for_signal(src=self.server_node,
                                                         tag=self.tag.STUDENT_UPDATES)
+            if isinstance(s_state, str) and s_state == "STOP":
+                if accord.acfg(self.config).get("log", True):
+                    accord.save_ckpt(self.model, f"{accord.run_dir(self.config)}/ckpt/client{self.node_id - 1}_last.pt")
+                break
             self.s_model.load_state_dict(s_state)
             self.s_model = self.s_model.to(self.device)
             self.round = round
             for i in range(self.nx_samples):
+                self._accord_capture = (accord.enabled(self.config) and i == 0
+                                        and accord.acfg(self.config).get("log", True))
                 self.single_round_fast()
+            self._accord_capture = False
             self.update_local_model()
             if self.round % self.log_tb_freq == 0:
                 self.comm_utils.send_signal(dest=self.server_node,
@@ -252,6 +274,13 @@ class FedDreamFastClient(BaseClient):
                     # self.model_utils.save_model(self.model, self.config["saved_models"] + f"user{self.node_id}.pt")
             # self.log_utils.log_console("Round {} done for node_{}".format(round, self.node_id))
                 print("Round {} done for node_{}".format(round, self.node_id))
+            if accord.enabled(self.config):
+                msg = self.comm_utils.wait_for_signal(src=self.server_node, tag=self.tag.ACCORD)
+                k = self.node_id - 1
+                if msg["save_best"]:
+                    accord.save_ckpt(self.model, f"{accord.run_dir(self.config)}/ckpt/client{k}_best.pt")
+                if msg["save_dream"]:
+                    accord.save_dream(self.config, round + 1, f"client{k}", self._cap)
 
 
 class FedDreamFastServer(BaseServer):
@@ -421,6 +450,12 @@ class FedDreamFastServer(BaseServer):
         acts = torch.stack(acts)
         acts = acts.mean(dim=0)
         acts = acts.detach()
+        if accord.enabled(self.config):
+            self._accord_entropy.append(accord.soft_label_entropy(acts))
+            if getattr(self, "_accord_capture", False):
+                S = accord.acfg(self.config)["dream_slots"]
+                self._cap["mean_logits"] = acts[:S].clone()
+                self._cap["soft_label"] = torch.softmax(acts[:S].float(), dim=1)
         # acts = torch.log_softmax(acts, dim=1)
         for client in self.clients:
             self.comm_utils.send_signal(dest=client,
@@ -480,6 +515,8 @@ class FedDreamFastServer(BaseServer):
             reptile_grad(self.meta_generator, self.generator, self.device)
             self.meta_optimizer.step()
         self.reps = self.generator(self.reps)
+        if getattr(self, "_accord_capture", False):
+            self._cap = {"image": self.reps[:accord.acfg(self.config)["dream_slots"]].detach().clone()}
         self.add_dreams()
         end = time.time()
         if self.log_console:
@@ -487,6 +524,8 @@ class FedDreamFastServer(BaseServer):
         return
 
     def run_protocol(self):
+        if accord.enabled(self.config):
+            return self.accord_run_protocol()
         if self.log_console:
             self.log_utils.log_console("Starting Server")
         # Get all the students to start local warmup rounds
@@ -512,3 +551,62 @@ class FedDreamFastServer(BaseServer):
                 self.update_stats(stats)
             if self.log_console:
                 self.log_utils.log_console("Round {} done".format(round))
+
+    def accord_run_protocol(self):
+        """Upstream loop plus: eval/test top-1/top-3 of the server model and of every client each
+        epoch, best/last checkpoints, metrics.jsonl with the soft-label entropy, the dream log, and
+        the stopping rule (utils/accord.py). The training steps are those of run_protocol."""
+        a = accord.acfg(self.config)
+        log = a.get("log", True)
+        rule = accord.StopRule(a)
+        rdir = accord.run_dir(self.config)
+        if log:
+            accord.record_run(self.config, self.dset_obj, {"arm": "CoDream-fast"})
+        for client in self.clients:
+            self.comm_utils.send_signal(dest=client, data=None, tag=self.tag.START_WARMUP)
+        self.comm_utils.wait_for_all_clients(self.clients, tag=self.tag.DONE_WARMUP)
+        round, epoch = 0, 0
+        while True:
+            self.round = round
+            epoch = round + 1
+            self._accord_entropy = []
+            for client in self.clients:
+                self.comm_utils.send_signal(dest=client, data=put_on_cpu(self.model.state_dict()),
+                                            tag=self.tag.STUDENT_UPDATES)
+            for i in range(self.nx_samples):
+                self._accord_capture = log and i == 0
+                self.single_round_fast()
+            self._accord_capture = False
+            if self.adaptive_distill and round>=10 and round % self.local_train_freq == 0:
+                self.update_server_model()
+            stats = self.comm_utils.wait_for_all_clients(self.clients, tag=self.tag.CLIENT_STATS)
+            self.update_stats(stats)
+            best_s = best_c = False
+            if log:
+                sc = self.scorer(self.model, self.device)
+                cl = [st[6] for st in stats]
+                cmean = {k: sum(c[k] for c in cl) / len(cl) for k in cl[0]}
+                best_s = rule.update("server", epoch, sc["eval_top1"])
+                best_c = rule.update("clients", epoch, cmean["eval_top1"])
+                if best_s:
+                    accord.save_ckpt(self.model, f"{rdir}/ckpt/server_best.pt")
+                accord.append_jsonl(f"{rdir}/metrics.jsonl",
+                                    {"epoch": epoch, "server": sc, "clients_mean": cmean, "clients": cl,
+                                     "soft_label_entropy": sum(self._accord_entropy) / len(self._accord_entropy)})
+            save_dream = log and (epoch % a["dream_every"] == 0 or best_s or best_c)
+            if save_dream:
+                accord.save_dream(self.config, epoch, "agg", self._cap)
+            for client in self.clients:
+                self.comm_utils.send_signal(dest=client, data={"save_best": best_c, "save_dream": save_dream},
+                                            tag=self.tag.ACCORD)
+            if self.log_console:
+                self.log_utils.log_console("Round {} done".format(round))
+            if rule.should_stop(epoch):
+                break
+            round += 1
+        for client in self.clients:
+            self.comm_utils.send_signal(dest=client, data="STOP", tag=self.tag.STUDENT_UPDATES)
+        if log:
+            accord.save_ckpt(self.model, f"{rdir}/ckpt/server_last.pt")
+            accord.write_json(f"{rdir}/done.json", {"epochs": epoch, "stopped_by": rule.stopped_by(epoch),
+                                                    "best": rule.best, "best_epoch": rule.best_epoch})
