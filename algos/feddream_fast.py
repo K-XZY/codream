@@ -1,4 +1,5 @@
 import math
+import os
 import pdb
 import time
 from typing import List, Tuple
@@ -483,7 +484,9 @@ class FedDreamFastServer(BaseServer):
                                             tag=self.tag.GENERATOR_UPDATES)
                 self.comm_utils.send_signal(dest=client, data=self.reps.to("cpu"), tag=self.tag.START_GEN_REPS)
             grads = self.comm_utils.wait_for_all_clients(self.clients, tag=self.tag.REPS_DONE)
-            grads = torch.stack(grads).to(self.device)
+            if os.environ.get("ACCORD_NANDEBUG") == "1":  # accord: read-only NaN tracing
+                for k, g in enumerate(grads):
+                    print(f"NANDBG ep {self.ep} batch-step {it} client{k} z nonfinite={(~torch.isfinite(g)).sum().item()} absmax={g.abs().max().item():.3g}", flush=True)
             grads = grads.mean(dim=0) 
             # if self.adaptive_distill and self.round > self.adaptive_distill_start_round:
             #     # pass reps on the local model and get the gradients
@@ -503,6 +506,11 @@ class FedDreamFastServer(BaseServer):
             if self.optimizer_type=="adam":
                 self.adam_update(grads)
             gen_state_dict = self.comm_utils.wait_for_all_clients(self.clients, tag=self.tag.GENERATOR_DONE)
+            if os.environ.get("ACCORD_NANDEBUG") == "1":
+                for k, sd in enumerate(gen_state_dict):
+                    bad = [n for n, v in sd.items() if v.is_floating_point() and not torch.isfinite(v).all()]
+                    mx = max(v.abs().max().item() for v in sd.values() if v.is_floating_point())
+                    print(f"NANDBG ep {self.ep} client{k} generator nonfinite_tensors={bad[:3]} absmax={mx:.3g}", flush=True)
             avg_gen_state_dict = self.aggregate(gen_state_dict)
             self.generator.load_state_dict(avg_gen_state_dict)
             if self.ismaml:
