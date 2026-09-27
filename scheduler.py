@@ -1,7 +1,10 @@
 from mpi4py import MPI
 import torch, random, numpy
 from algos.base_class import BaseNode
-from algos.feddream import FedDreamClient, FedDreamServer
+try:  # plain CoDream imports algos/algos.py, which upstream deleted in 3118b19
+    from algos.feddream import FedDreamClient, FedDreamServer
+except ImportError:
+    FedDreamClient = FedDreamServer = None
 from algos.feddream_fast import FedDreamFastClient, FedDreamFastServer
 from algos.fl import FedAvgClient, FedAvgServer
 from algos.avgkd import AvgKDClient, AvgKDServer
