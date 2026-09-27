@@ -1,4 +1,12 @@
 import argparse
+import os
+if os.environ.get("ACCORD_DETERMINISTIC") == "1":
+    # accord: opt-in bitwise-reproducible mode for the read-only check (set before CUDA starts)
+    os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+    import torch
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
+    torch.use_deterministic_algorithms(True, warn_only=True)
 import socket
 from scheduler import Scheduler
 import torch

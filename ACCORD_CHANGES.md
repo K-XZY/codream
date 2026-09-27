@@ -28,6 +28,9 @@ Branch `accord-repro`. One line per change: file, function, why.
   save flags after each round. Server `single_round_fast`/`add_dreams` capture the aggregate
   image, mean logits and the soft-label entropy of every batch;
   `FedDreamFastServer.accord_run_protocol` (new), entered from `run_protocol`.
+- `main.py`: `ACCORD_DETERMINISTIC=1` switches on cuDNN-deterministic / deterministic algorithms
+  (off by default; used only by the read-only check, because CoDream-fast is not bitwise
+  reproducible run to run otherwise).
 - `configs/accord/grid.py` (new): the 9 cells over the upstream CIFAR10 IID configs.
 - `tests/check_runs.py`, `tests/check_artifacts.py` (new): validators.
 
