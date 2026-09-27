@@ -511,7 +511,8 @@ class FedDreamFastServer(BaseServer):
                 for k, sd in enumerate(gen_state_dict):
                     bad = [n for n, v in sd.items() if v.is_floating_point() and not torch.isfinite(v).all()]
                     mx = max(v.abs().max().item() for v in sd.values() if v.is_floating_point())
-                    print(f"NANDBG ep {self.ep} client{k} generator nonfinite_tensors={bad[:3]} absmax={mx:.3g}", flush=True)
+                    top = sorted(((v.abs().max().item(), n) for n, v in sd.items() if v.is_floating_point()), reverse=True)[:3]
+                    print(f"NANDBG ep {self.ep} client{k} generator nonfinite_tensors={bad[:3]} absmax={mx:.3g} top={[(n, round(x, 1)) for x, n in top]}", flush=True)
             avg_gen_state_dict = self.aggregate(gen_state_dict)
             self.generator.load_state_dict(avg_gen_state_dict)
             if self.ismaml:
