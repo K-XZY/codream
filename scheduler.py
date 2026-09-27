@@ -1,11 +1,8 @@
 from mpi4py import MPI
 import torch, random, numpy
 from algos.base_class import BaseNode
-from algos.dare import DAREClient, DAREServer
-from algos.distill_reps import DistillRepsClient, DistillRepsServer
 from algos.feddream import FedDreamClient, FedDreamServer
 from algos.feddream_fast import FedDreamFastClient, FedDreamFastServer
-from algos.feddream_fast_independent import FedDreamFastClientIndp, FedDreamFastServerIndp
 from algos.fl import FedAvgClient, FedAvgServer
 from algos.avgkd import AvgKDClient, AvgKDServer
 from algos.isolated import IsolatedClient, IsolatedServer
@@ -26,12 +23,9 @@ algo_map = {
     "fedprox": [FedProxServer, FedProxClient],
     "moon": [MoonServer, MoonClient],
     "centralized": [CentralizedServer],
-    "dare": [DAREServer, DAREClient],
-    "distill_reps": [DistillRepsServer, DistillRepsClient],
     "scaffold": [SCAFFOLDServer, SCAFFOLDClient],
     "feddream": [FedDreamServer, FedDreamClient],
     "feddream_fast": [FedDreamFastServer, FedDreamFastClient],
-    "feddream_fast_indp": [FedDreamFastServerIndp, FedDreamFastClientIndp],
     "fedgen": [FedGenServer, FedGenClient],
 }
 
