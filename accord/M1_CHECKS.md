@@ -27,3 +27,15 @@ two runs of one cell with the same seed will therefore not match exactly for CoD
 
 Found on the way: an exception in one MPI rank left the other ranks waiting forever;
 `accord/run_cell.sh` now launches with `python -m mpi4py`, which aborts all ranks.
+
+## NaN guard (2026-09-28, RTX 5090)
+
+Every non-IID CoDream-fast run of the first grid went non-finite (dream images NaN from epoch
+19-120); the generator's BatchNorm running variance (`conv_blocks.3`, `conv_blocks.7`) grows
+without bound (2.5 -> 2,900 within 8 epochs, traced with `ACCORD_NANDEBUG=1`). Kevin chose to
+rerun those six cells with the opt-in guard (`ACCORD_NAN_GUARD=1`, see ACCORD_CHANGES.md).
+
+| check | result |
+|---|---|
+| NaN injected into the dreams at batch 12 (disjoint, seed 6, 5 epochs) | one reset logged at batch 12; run completes rc=0; `guard_resets` 0,0,1,1,1; client-mean eval top-1 keeps rising (10.9 -> 15.5) |
+| guard armed but never firing vs guard off, deterministic mode, 5 epochs | per-round client test accuracies identical (20 lines) |
