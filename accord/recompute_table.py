@@ -2,7 +2,8 @@
 the exported JSON. Independent of export_page_data.py: it re-derives the best epoch from the
 eval column instead of trusting done.json.
 
-usage: python accord/recompute_table.py GRID_DIR OUT_DIR/codream-data.json
+usage: python accord/recompute_table.py GRID_DIR[,GRID_DIR2...] OUT_DIR/codream-data.json
+(later dirs override the same split/arm/seed, as in export_page_data.py)
 """
 import glob, json, sys
 
@@ -11,10 +12,15 @@ def main(grid, data):
     D = json.load(open(data))
     got = {(s["split"], s["arm"]): s for s in D["scores"]}
     n = 0
-    for rj in glob.glob(f"{grid}/*/run.json"):
+    chosen = {}
+    for rj in [p for g in grid.split(",") for p in sorted(glob.glob(f"{g}/*/run.json"))]:
         d = rj[:-len("/run.json")]
+        if not glob.glob(f"{d}/done.json"):
+            continue
         cfg = json.load(open(rj))["config"]
         split, arm = cfg["exp_id"].split("-")
+        chosen[(split, arm, cfg["seed"])] = (d, cfg)
+    for (split, arm, _), (d, cfg) in sorted(chosen.items()):
         M = [json.loads(l) for l in open(f"{d}/metrics.jsonl")]
         keys = {"fast": [("CoDream-server", "server"), ("CoDream-clients", "clients_mean")],
                 "fedavg": [("FedAvg", "server")], "cent": [("CENT", "server")]}[arm]

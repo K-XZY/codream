@@ -1,6 +1,9 @@
 """M5: turn the grid's run directories into the data the results page expects.
 
-usage: python accord/export_page_data.py GRID_DIR OUT_DIR [--cifar ROOT] [--dream-seed 4]
+usage: python accord/export_page_data.py GRID_DIR[,GRID_DIR2...] OUT_DIR [--cifar ROOT] [--dream-seed 4]
+
+Several grid dirs may be given, comma-separated; a (split, arm, seed) run in a later dir replaces
+the same run from an earlier one (used for the NaN-guarded CoDream-fast reruns).
 
 Writes OUT_DIR/codream-data.json (the schema in the page's Implementation block) and
 OUT_DIR/codream-exp/{examples,dreams}/<split>/*.png (32x32, upscaled only by the page's CSS).
@@ -15,9 +18,9 @@ SPLITS = ["iid", "dir01", "disjoint"]
 ARMS = {"cent": ["CENT"], "fedavg": ["FedAvg"], "fast": ["CoDream-server", "CoDream-clients"]}
 
 
-def runs(grid):
+def runs(grids):
     out = {}
-    for rj in glob.glob(f"{grid}/*/run.json"):
+    for rj in [p for g in grids.split(",") for p in sorted(glob.glob(f"{g}/*/run.json"))]:
         d = os.path.dirname(rj)
         if not os.path.exists(f"{d}/done.json"):
             continue
