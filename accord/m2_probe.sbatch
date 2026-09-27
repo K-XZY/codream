@@ -6,7 +6,7 @@
 # then 2 and 3 of them concurrently on the one GPU, to choose the packing.
 A=$PROJECTDIR/kevin
 source $A/miniforge3/etc/profile.d/conda.sh && conda activate $A/miniforge3/envs/codream
-export TMPDIR=$A/tmp ACCORD_DATA=$A/data/cifar10 OMPI_MCA_btl=self,vader,tcp
+export TMPDIR=$A/tmp ACCORD_DATA=$A/data/cifar10
 cd $A/codream
 R=$A/runs/codream/m2_$SLURM_JOB_ID
 nvidia-smi --query-gpu=memory.used,utilization.gpu --format=csv,noheader -l 5 > $R.gpu.txt 2>/dev/null &
