@@ -59,6 +59,9 @@ Branch `accord-repro`. One line per change: file, function, why.
 
 ## Upstream vs paper (documented, not changed)
 
+- Adversarial loss: `FedDreamFastClient.fast_synthesize` uses a KL divergence
+  (`kldiv(s_out, t_out)`, masked to agreeing predictions); the paper's Eq. 7 writes a JSD.
+
 - Soft label: `FedDreamFastServer.add_dreams` averages the clients' logits; the paper's Eq. 5
   averages class probabilities.
 - CoDream-fast dreams are `G(z)`: the server averages the clients' generators and latents.
