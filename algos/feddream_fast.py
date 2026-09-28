@@ -10,7 +10,7 @@ import torch.nn as nn
 from algos.base_class import BaseClient, BaseServer
 from utils.generator import Generator
 from utils.di_hook import DeepInversionHook
-from utils.modules import KLDiv, kldiv, reptile_grad, fomaml_grad, reset_l0, reset_bn, put_on_cpu
+from utils.modules import KLDiv, kldiv, kldiv_stable, reptile_grad, fomaml_grad, reset_l0, reset_bn, put_on_cpu
 from torch.utils.data import DataLoader
 from utils.data_utils import CustomDataset
 from utils import accord
@@ -175,7 +175,8 @@ class FedDreamFastClient(BaseClient):
             if self.adv>0 and (self.round >= 15):
                 s_out = self.s_model(inputs)
                 mask = (s_out.max(1)[1]==t_out.max(1)[1]).float()
-                loss_adv = -(kldiv(s_out, t_out, reduction='none').sum(1) * mask).mean() # decision adversarial distillation
+                _kl = kldiv_stable if (accord.enabled(self.config) and accord.acfg(self.config).get("stable_kl", False)) else kldiv
+                loss_adv = -(_kl(s_out, t_out, reduction='none').sum(1) * mask).mean() # decision adversarial distillation
             loss = self.oh * entropy + self.bn * loss_bn + self.adv * loss_adv
             if getattr(self, "_accord_capture", False) and _step == self.local_steps - 1:
                 S = accord.acfg(self.config)["dream_slots"]

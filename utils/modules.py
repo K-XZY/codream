@@ -19,6 +19,13 @@ def kldiv( logits, targets, T=1.0, reduction='batchmean'):
     p = F.softmax( targets/T, dim=1 )
     return F.kl_div( q, p, reduction=reduction ) * (T*T)
 
+def kldiv_stable(logits, targets, T=1.0, reduction='batchmean'):
+    """accord: kldiv computed from log-probabilities (log_target=True). Same value as kldiv; its
+    gradient stays finite when softmax(targets) underflows to 0, where kldiv's xlogy gives NaN."""
+    q = F.log_softmax(logits/T, dim=1)
+    log_p = F.log_softmax(targets/T, dim=1)
+    return F.kl_div(q, log_p, reduction=reduction, log_target=True) * (T*T)
+
 class KLDiv(nn.Module):
     def __init__(self, T=1.0, reduction='batchmean'):
         super().__init__()

@@ -38,7 +38,8 @@ cfg.update({
                "max_epochs": int(os.environ.get("ACCORD_MAX", 800)),
                "log": os.environ.get("ACCORD_LOG", "1") == "1",
                "dream_every": int(os.environ.get("ACCORD_DREAM_EVERY", 10)), "dream_slots": 8,
-               "nan_guard": os.environ.get("ACCORD_NAN_GUARD", "0") == "1"},
+               "nan_guard": os.environ.get("ACCORD_NAN_GUARD", "0") == "1",
+               "stable_kl": os.environ.get("ACCORD_STABLE_KL", "0") == "1"},
 })
 if os.environ.get("ACCORD_ADV") is not None:     # diagnostic only: weight of the adversarial term
     cfg["adv"] = float(os.environ["ACCORD_ADV"])
