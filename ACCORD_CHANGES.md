@@ -38,6 +38,14 @@ Branch `accord-repro`. One line per change: file, function, why.
   only for the non-IID CoDream-fast reruns (Kevin, 2026-09-28): without it every non-IID run's
   generator went non-finite between epochs 19 and 120 (BatchNorm running variance of the
   generator's conv blocks grows without bound, 2.5 -> 2,900 in 8 epochs).
+- `utils/modules.py` `kldiv_stable` (new) and `algos/feddream_fast.py` `fast_synthesize`
+  (opt-in via `accord.stable_kl` / `ACCORD_STABLE_KL=1`): the adversarial term's KL computed from
+  log-probabilities (`F.kl_div(..., log_target=True)`). Same value; the upstream `kldiv` passes an
+  undetached `softmax(t_out)` as target, and when that underflows to 0 for a very confident client
+  the backward of `xlogy` is NaN (found with torch anomaly detection on Isambard: every non-IID
+  CoDream-fast run failed this way, first at round 15 when the adversarial term switches on).
+  `tests/check_stable_kl.py`: equal to 1e-14 on ordinary logits; finite where `kldiv` gives NaN.
+  Used, with the NaN guard as a safety net, for the six non-IID CoDream-fast runs (Kevin, 2026-09-28).
 - `configs/accord/grid.py` (new): the 9 cells over the upstream CIFAR10 IID configs.
 - `tests/check_runs.py`, `tests/check_artifacts.py` (new): validators.
 
