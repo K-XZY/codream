@@ -102,7 +102,7 @@ def main():
         done = json.load(open(f"{d}/done.json"))
         keep = {e for e in done["best_epoch"].values()}
         epochs = sorted(int(os.path.basename(p)[1:5]) for p in glob.glob(f"{d}/dreams/e*_agg.pt"))
-        epochs = [e for e in epochs if e % 10 == 0 or e in keep]
+        epochs = [e for e in epochs if e % 10 == 0 or e in keep or e == epochs[0]]  # keep the earliest (epoch 1)
         probs = {}
         for e in epochs:
             A = torch.load(f"{d}/dreams/e{e:04d}_agg.pt")
