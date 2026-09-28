@@ -1,5 +1,8 @@
 import argparse
 import os
+if os.environ.get("ACCORD_ANOMALY") == "1":  # accord: diagnostic, raise at the first NaN-producing backward op
+    import torch
+    torch.autograd.set_detect_anomaly(True)
 if os.environ.get("ACCORD_DETERMINISTIC") == "1":
     # accord: opt-in bitwise-reproducible mode for the read-only check (set before CUDA starts)
     os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
