@@ -1,0 +1,13 @@
+split,arm,seed,scored,best_epoch,epochs,stopped_by,eval_top1,eval_top3,test_top1,test_top3,guard_resets,run_dir
+dir01,fast,4,server,291,400,rule,40.58,74.14,40.5,73.16,0,non_iid_balanced_clients_feddream_fast_cifar10_4clients_1000samples_dir01-fast_seed4
+dir01,fast,4,clients,246,400,rule,36.845,67.38,37.2825,67.315,0,non_iid_balanced_clients_feddream_fast_cifar10_4clients_1000samples_dir01-fast_seed4
+dir01,fast,5,server,171,400,rule,34.24,57.48,34.27,57.71,0,non_iid_balanced_clients_feddream_fast_cifar10_4clients_1000samples_dir01-fast_seed5
+dir01,fast,5,clients,156,400,rule,32.544999999999995,58.525,32.447500000000005,58.3575,0,non_iid_balanced_clients_feddream_fast_cifar10_4clients_1000samples_dir01-fast_seed5
+dir01,fast,6,server,116,400,rule,40.44,68.02,40.32,68.68,0,non_iid_balanced_clients_feddream_fast_cifar10_4clients_1000samples_dir01-fast_seed6
+dir01,fast,6,clients,101,400,rule,42.455000000000005,70.12,42.457499999999996,70.2,0,non_iid_balanced_clients_feddream_fast_cifar10_4clients_1000samples_dir01-fast_seed6
+disjoint,fast,4,server,161,400,rule,26.16,61.22,26.3,60.44,0,non_iid_disjoint_feddream_fast_cifar10_4clients_1000samples_disjoint-fast_seed4
+disjoint,fast,4,clients,146,400,rule,23.04,45.6,23.642500000000002,46.05,0,non_iid_disjoint_feddream_fast_cifar10_4clients_1000samples_disjoint-fast_seed4
+disjoint,fast,5,server,156,400,rule,33.12,56.8,33.35,57.64,0,non_iid_disjoint_feddream_fast_cifar10_4clients_1000samples_disjoint-fast_seed5
+disjoint,fast,5,clients,91,400,rule,27.845000000000002,55.32,28.630000000000003,55.6525,0,non_iid_disjoint_feddream_fast_cifar10_4clients_1000samples_disjoint-fast_seed5
+disjoint,fast,6,server,126,400,rule,28.54,55.84,29.01,55.84,0,non_iid_disjoint_feddream_fast_cifar10_4clients_1000samples_disjoint-fast_seed6
+disjoint,fast,6,clients,91,400,rule,28.759999999999998,61.91499999999999,28.505000000000003,61.905,0,non_iid_disjoint_feddream_fast_cifar10_4clients_1000samples_disjoint-fast_seed6
