@@ -40,6 +40,8 @@ cfg.update({
                "dream_every": int(os.environ.get("ACCORD_DREAM_EVERY", 10)), "dream_slots": 8,
                "nan_guard": os.environ.get("ACCORD_NAN_GUARD", "0") == "1"},
 })
+if os.environ.get("ACCORD_ADV") is not None:     # diagnostic only: weight of the adversarial term
+    cfg["adv"] = float(os.environ["ACCORD_ADV"])
 if SPLIT == "dir01":
     cfg["alpha"] = 0.1
 if ARM == "cent":
