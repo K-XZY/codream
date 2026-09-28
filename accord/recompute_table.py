@@ -2,13 +2,14 @@
 the exported JSON. Independent of export_page_data.py: it re-derives the best epoch from the
 eval column instead of trusting done.json.
 
-usage: python accord/recompute_table.py GRID_DIR[,GRID_DIR2...] OUT_DIR/codream-data.json
+usage: python accord/recompute_table.py GRID_DIR[,GRID_DIR2...] OUT_DIR/codream-data.json [split:arm,...to skip]
 (later dirs override the same split/arm/seed, as in export_page_data.py)
 """
 import glob, json, sys
 
 
-def main(grid, data):
+def main(grid, data, skip=""):
+    skip = {tuple(c.split(":")) for c in skip.split(",") if c}
     D = json.load(open(data))
     got = {(s["split"], s["arm"]): s for s in D["scores"]}
     n = 0
@@ -19,7 +20,8 @@ def main(grid, data):
             continue
         cfg = json.load(open(rj))["config"]
         split, arm = cfg["exp_id"].split("-")
-        chosen[(split, arm, cfg["seed"])] = (d, cfg)
+        if (split, arm) not in skip:
+            chosen[(split, arm, cfg["seed"])] = (d, cfg)
     for (split, arm, _), (d, cfg) in sorted(chosen.items()):
         M = [json.loads(l) for l in open(f"{d}/metrics.jsonl")]
         keys = {"fast": [("CoDream-server", "server"), ("CoDream-clients", "clients_mean")],
@@ -37,4 +39,4 @@ def main(grid, data):
 
 
 if __name__ == "__main__":
-    main(*sys.argv[1:3])
+    main(*sys.argv[1:4])
