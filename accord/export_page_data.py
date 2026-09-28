@@ -54,8 +54,11 @@ def main():
     ap.add_argument("grid"); ap.add_argument("out")
     ap.add_argument("--cifar", default=os.environ.get("ACCORD_DATA", "./imgs/cifar10"))
     ap.add_argument("--dream-seed", type=int, default=4)
+    ap.add_argument("--skip", default="", help="comma-separated split:arm cells to leave out, e.g. dir01:fast")
     a = ap.parse_args()
     R = runs(a.grid)
+    for cell in filter(None, a.skip.split(",")):
+        R.pop(tuple(cell.split(":")), None)
     D = {"scores": [], "curves": [], "counts": {}, "dreams": {}, "entropy": {}}
 
     for (split, arm), by_seed in sorted(R.items()):
@@ -80,10 +83,11 @@ def main():
     cifar = CIFAR10(root=a.cifar, train=True, download=False)
     targets = np.array(cifar.targets)
     for split in SPLITS:
-        d = R.get((split, "fast"), {}).get(a.dream_seed)
-        if d is None:
+        # client data: any federated arm of this split and seed (all arms share the split, M4 check 3)
+        dc = R.get((split, "fedavg"), {}).get(a.dream_seed) or R.get((split, "fast"), {}).get(a.dream_seed)
+        if dc is None:
             continue
-        clients = [json.load(open(f"{d}/clients/client{k}.json")) for k in range(4)]
+        clients = [json.load(open(f"{dc}/clients/client{k}.json")) for k in range(4)]
         D["counts"][split] = [c["class_counts"] for c in clients]
         for k, c in enumerate(clients):
             idx = np.array(c["orig_idx"])
@@ -91,6 +95,9 @@ def main():
                 hit = idx[targets[idx] == cls]
                 if hit.size:
                     save_png(cifar.data[hit[0]], f"{a.out}/codream-exp/examples/{split}/client{k}_class{cls}.png")
+        d = R.get((split, "fast"), {}).get(a.dream_seed)
+        if d is None:
+            continue
         # dream log: every logged epoch that is a multiple of 10, plus the best epochs
         done = json.load(open(f"{d}/done.json"))
         keep = {e for e in done["best_epoch"].values()}
