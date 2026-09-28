@@ -7,7 +7,7 @@
 # cells i and i+8 run one after the other in the same slot.
 A=$PROJECTDIR/kevin
 source $A/miniforge3/etc/profile.d/conda.sh && conda activate $A/miniforge3/envs/codream
-export TMPDIR=$A/tmp ACCORD_DATA=$A/data/cifar10 ACCORD_DUMP=$A/runs/codream/grid_stablekl/ ACCORD_NAN_GUARD=1 ACCORD_STABLE_KL=1
+export TMPDIR=$A/tmp ACCORD_DATA=$A/data/cifar10 ACCORD_DUMP=$A/runs/codream/grid_stablekl2/ ACCORD_NAN_GUARD=1 ACCORD_STABLE_KL=1
 cd $A/codream
 echo "commit $(git rev-parse --short HEAD) job $SLURM_JOB_ID cells: $1"
 read -ra CELLS <<< "$1"
